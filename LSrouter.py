@@ -31,7 +31,7 @@ class LSrouter(Router):
         self.link_state_db = {}
 
         # Xây dựng Link State cho router hiện tại, lưu trữ cổng được dùng -> địa chỉ kề & trọng số
-        # {port: (endpoint, cost)}
+        # {port: (neighbor, cost)}
         self.link_state = {}
 
         # Bảng định tuyển
@@ -79,7 +79,11 @@ class LSrouter(Router):
             # Cập nhật Link State Database và Bảng định tuyến bằng thuật toán Dijkstra
             self.link_state_db[src_addr] = (seq_num, link_state)
             self.dijkstra()
-                
+
+            # Cập nhật Link State của router hiện tại cho các router khác, ngoại trừ src_addr
+            for neighbor_port in self.link_state:
+                if neighbor_port != port:
+                    self.send(neighbor_port, packet)
 
     def handle_new_link(self, port, endpoint, cost):
         """Handle new link."""
@@ -90,11 +94,14 @@ class LSrouter(Router):
         self.link_state[port] = (endpoint, cost)
         self.seq_num += 1
 
+        # Cập nhật Link State Database
+        self.link_state_db[self.addr] = (self.seq_num, self.link_state)
+
         # Cập nhật bảng định tuyến
         self.dijkstra()
 
         # Cập nhật Link State của router hiện tại cho các router khác
-        self.boardcast()
+        self.broadcast()
 
     def handle_remove_link(self, port):
         """Handle removed link."""
@@ -104,13 +111,15 @@ class LSrouter(Router):
 
         if port in self.link_state:
             del self.link_state[port]
-            self.sequence_number += 1
-
+            self.seq_num += 1
+            # Cập nhật Link State Database
+            self.link_state_db[self.addr] = (self.seq_num, self.link_state)
+            
             # Cập nhật bảng định tuyến
             self.dijkstra()
 
             # Cập nhật Link State của router hiện tại cho các router khác
-            self.boardcast()
+            self.broadcast()
 
     def handle_time(self, time_ms):
         """Handle current time."""
@@ -119,13 +128,17 @@ class LSrouter(Router):
             # TODO
             #   broadcast the link state of this router to all neighbors
 
-            self.boardcast()
+            self.broadcast()
 
     def dijkstra(self):
         """Thuật toán Dijkstra để tìm đường đi ngắn nhất & cập nhật bảng định tuyến."""
 
         # Xây dựng đồ thị
-        graph = {router_addr: link_state for router_addr, (seq_num, link_state) in self.link_state_db.items()}
+        graph = {}
+        for router_addr, (seq_num, link_state) in self.link_state_db.items():
+            graph[router_addr] = {}
+            for port, (neighbor, cost) in link_state.items():
+                graph[router_addr][neighbor] = cost
 
         # Khoảng cách từ router hiện tại đến các router khác
         dist = {self.addr: 0}
@@ -143,7 +156,7 @@ class LSrouter(Router):
             if du != dist[u]:
                 continue
 
-            for port, (v, cost) in graph.get(u, {}).items():
+            for v, cost in graph.get(u, {}).items():
                 if v not in dist or dist[v] > dist[u] + cost:
                     dist[v] = dist[u] + cost
                     trace[v] = u
@@ -160,12 +173,12 @@ class LSrouter(Router):
                 next_hop = trace[next_hop]
 
             # Tìm cổng đã kết nối với next_hop
-            for port, (endpoint, _) in self.link_state.items():
-                if endpoint == next_hop:
+            for port, (neighbor, _) in self.link_state.items():
+                if neighbor == next_hop:
                     self.forwarding_table[v] = port
                     break
 
-    def boardcast(self):
+    def broadcast(self):
         """Cập nhật Link State của router hiện tại cho các router khác (Link State Advertisement)."""
         lsa = {
             'src_addr': self.addr,
