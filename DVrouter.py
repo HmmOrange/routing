@@ -37,8 +37,6 @@ class DVrouter(Router):
         self.distance_vector = {self.addr : (None, 0)}
         self.INF = float('inf')
 
-        pass
-
     def handle_packet(self, port, packet):
         """Process incoming packet."""
         # TODO
@@ -119,6 +117,7 @@ class DVrouter(Router):
             pass
 
     def bellman_ford(self, port, distance_vector):
+        """Thuật toán Bellman-Ford để tìm đường đi ngắn nhất & cập nhật bảng định tuyến."""
         if port not in self.neighbors:
             return
         
